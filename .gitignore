@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.local/
+.dev.vars
+.env*
+!.env.example
+*-setup.png
+*-verification.png
+*-confirmation.png
+artifacts/
+
+# Local screenshots and setup records
+/*.png
+/*.jpg
+/*.jpeg
+
+# Local credentials, database backups, and logs
+.wrangler/
+.dev.vars.*
+*.pem
+*.key
+*.sqlite*
+*.db
+*.log
+qmc-backup-*.json

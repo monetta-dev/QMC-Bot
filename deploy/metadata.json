@@ -1,0 +1,15 @@
+{
+  "main_module": "worker.mjs",
+  "compatibility_date": "2026-07-30",
+  "bindings": [
+    { "type": "d1", "name": "DB", "id": "cb7eb243-8c05-434b-acbb-33ff151ce7e4" },
+    { "type": "plain_text", "name": "LINE_OFFICIAL_ID", "text": "@788fjcfb" }
+  ],
+  "keep_bindings": ["secret_text"],
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}
