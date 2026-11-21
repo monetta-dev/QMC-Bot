@@ -49,6 +49,17 @@ before(async()=>{
  await db.batch([sql("INSERT INTO admins VALUES('Uowner','owner','責任者')"),sql('INSERT INTO sessions VALUES(?,?,?,?)',createHash('sha256').update('test-session').digest('hex'),'Uowner','test-csrf',Date.now()+86400000)]);
 });
 after(async()=>{if(mf)await mf.dispose();});
+test('browser and home-screen icons return the original bytes, including HEAD requests',async()=>{
+ for(const [path,type] of [['favicon.svg','image/svg+xml'],['favicon.ico','image/x-icon'],['apple-touch-icon.png','image/png']]){
+  const response=await mf.dispatchFetch('https://qmc.test/'+path);
+  assert.equal(response.status,200);
+  assert.ok(response.headers.get('content-type').startsWith(type));
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),await readFile('public/'+path));
+  const head=await mf.dispatchFetch('https://qmc.test/'+path,{method:'HEAD'});
+  assert.equal(head.status,200);
+  assert.equal((await head.arrayBuffer()).byteLength,0);
+ }
+});
 test('production API rejects unauthenticated and cross-origin writes',async()=>{
  assert.equal((await mf.dispatchFetch('https://qmc.test/api/state')).status,401);
  assert.equal((await mf.dispatchFetch('http://localhost/api/state')).status,401);

@@ -44,7 +44,7 @@ npm run build
 | Messaging APIチャネル | `2012476415` |
 | LINEログインチャネル | `2012476968`（公開済み） |
 | LINE公式アカウント | `@788fjcfb` |
-| 公開先 | `https://qmc-pigeon-care.xxxkousukexxx03.workers.dev` |
+| 公開先 | `https://qmc.monetam.xyz` |
 | LINE Webhook | 公開先 + `/webhooks/line` |
 | LINEログインのコールバック | 公開先 + `/auth/callback` |
 
@@ -72,6 +72,8 @@ npm run build
 ### 配置と定期実行
 
 `deploy/metadata.json` にシークレット以外のバインディングとログ設定があります。`dist/worker.mjs` とこのメタデータをmultipart形式でWorkers APIへアップロードします。`keep_bindings: ["secret_text"]` により既存のシークレットを維持します。
+
+`qmc.monetam.xyz` は、このWorkerに接続したCloudflare Workersのカスタムドメインです。DNSレコードとHTTPS証明書はCloudflareが管理します。LINEログインのコールバックには `https://qmc.monetam.xyz/auth/callback`、Webhookには `https://qmc.monetam.xyz/webhooks/line` を設定します。
 
 初回は `migrations/0001.sql` をD1に適用します。同SQLは初回セットアップの再実行が可能です。運用開始後の変更では新しい番号のマイグレーションを追加し、既存データを消さない形で適用してください。
 

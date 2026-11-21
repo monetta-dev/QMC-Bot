@@ -5,7 +5,7 @@ export async function buildApp(){
  });
  await build({
   entryPoints:['src/worker.mjs'], bundle:true, format:'esm', platform:'browser', target:'es2022',
-  outfile:'dist/worker.mjs', loader:{'.html':'text','.css':'text'},
+  outfile:'dist/worker.mjs', loader:{'.html':'text','.css':'text','.svg':'text','.png':'binary','.ico':'binary'},
   plugins:[{name:'client-as-text', setup(build){
    build.onLoad({filter:/public[\\/]app\.js$/},()=>({contents:client.outputFiles[0].text,loader:'text'}));
   }}]

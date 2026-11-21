@@ -1,6 +1,9 @@
 import html from '../public/index.html';
 import css from '../public/style.css';
 import client from '../public/app.js';
+import favicon from '../public/favicon.svg';
+import faviconIco from '../public/favicon.ico';
+import touchIcon from '../public/apple-touch-icon.png';
 import {jstParts,validMonth,datesInMonth,normalizeDraft,publicationIssues,freezeSchedule,sameAssignment,reminderTime,reminderStartsAt,reminderPhase} from './domain.mjs';
 import {calendarCard,calendarFlexMessage} from './calendar-flex.mjs';
 import {verifySignature,lineRequest,push,sha256,randomToken,b64url} from './line.mjs';
@@ -336,10 +339,20 @@ async function route(r,env) {
   if(!['GET','HEAD'].includes(r.method)) fail('この操作は利用できません',405);
   const image=/^\/line-images\/([0-9a-f]{64})\.png$/.exec(path);
   if(image) return sharedImage(r,env,image[1]);
-  const assets={'/':{body:html,type:'text/html'},'/demo':{body:html,type:'text/html'},'/privacy':{body:html,type:'text/html'},'/app.js':{body:client,type:'text/javascript'},'/style.css':{body:css,type:'text/css'}};
+  const assets={
+    '/':{body:html,type:'text/html'},
+    '/demo':{body:html,type:'text/html'},
+    '/privacy':{body:html,type:'text/html'},
+    '/app.js':{body:client,type:'text/javascript'},
+    '/style.css':{body:css,type:'text/css'},
+    '/favicon.svg':{body:favicon,type:'image/svg+xml'},
+    '/favicon.ico':{body:faviconIco,type:'image/x-icon'},
+    '/apple-touch-icon.png':{body:touchIcon,type:'image/png'}
+  };
   const asset=assets[path];
   if(!asset) return new Response('Not found',{status:404});
-  return new Response(r.method==='HEAD'?null:asset.body,{headers:{'Content-Type':asset.type+'; charset=utf-8','Cache-Control':'no-cache'}});
+  const contentType=typeof asset.body==='string'?asset.type+'; charset=utf-8':asset.type;
+  return new Response(r.method==='HEAD'?null:asset.body,{headers:{'Content-Type':contentType,'Cache-Control':'no-cache'}});
 }
 export default {
   async fetch(r,env) {

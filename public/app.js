@@ -43,7 +43,7 @@ async function load(){
 }
 function brand() {
  return `<a class="brand" href="${demo ? '/demo' : '/'}">
-   <span class="brand-icon">${icon('calendar', 19)}</span><span>QMC 鳩当番</span>
+   <span class="brand-icon">${icon('dove', 19)}</span><span>QMC 鳩当番</span>
  </a>`;
 }
 function landing(error) {

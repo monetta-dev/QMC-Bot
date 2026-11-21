@@ -28,7 +28,7 @@
 
 ## 本番接続済み
 
-- 本番URL： https://qmc-pigeon-care.xxxkousukexxx03.workers.dev
+- 本番URL： https://qmc.monetam.xyz
 - LINEログイン：monetta内 / 2012476968 / 公開済み。
 - 5件の認証情報はCloudflareの暗号化シークレットへ登録済み。平文の認証情報ファイルは作成していない。
 - 本番LINEログインと初期責任者登録を確認。
