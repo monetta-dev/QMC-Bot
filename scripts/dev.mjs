@@ -11,7 +11,6 @@ for(const file of (await readdir('migrations')).filter(file=>file.endsWith('.sql
  await db.batch(migration.split(';').map(x=>x.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
 }
 console.log(`Local: ${await mf.ready}`);
-console.log('体験版: http://127.0.0.1:8787/demo');
 let timer,busy=false;
 for(const directory of ['src','public']) watch(directory,{recursive:true},()=>{
  clearTimeout(timer);timer=setTimeout(async()=>{

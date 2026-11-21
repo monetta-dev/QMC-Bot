@@ -23,26 +23,19 @@ const days=m=>new Date(Date.UTC(+m.slice(0,4),+m.slice(5),0)).getUTCDate();
 const dates=m=>Array.from({length:days(m)},(_,i)=>`${m}-${String(i+1).padStart(2,'0')}`);
 const weekday=d=>new Date(d+'T00:00:00Z').getUTCDay();
 const formatTime=v=>v?new Date(v).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-const demo=location.pathname==='/demo';
 let data=null,month=today().slice(0,7),view='calendar',saving=false,quota=null,toastTimer;
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('toast-visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('toast-visible'),4500);}
 async function request(path,method='GET',body){
  const response=await fetch(path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(data?.csrf?{'X-CSRF-Token':data.csrf}:{})},body:body?JSON.stringify(body):undefined});
  const result=await response.json();if(!response.ok){const err=new Error(result.error||'通信に失敗しました');err.status=response.status;throw err;}return result;
 }
-function sample(){
- const members=['田中','佐藤','鈴木','山本','高橋','渡辺'].map((name,i)=>({id:'demo-'+i,name,display_name:name+'（サンプル）',approved:1,following:1,archived:0}));
- const saved=JSON.parse(localStorage.getItem('qmc-demo-'+month)||'null');
- return {user:{name:'鳩係の体験用',role:new URLSearchParams(location.search).get('access')==='viewer'?'viewer':'owner'},csrf:'demo',month,members,publications:[],notifications:[],admins:members.map((m,i)=>({id:m.id,name:m.name,role:i===0?'owner':null,is_self:i===0})),schedule:saved||{draft:Object.fromEntries(dates(month).filter((d,i)=>i<days(month)-5).map((d,i)=>[d,i%9===8?'off':members[i%6].id])),version:0,publishedId:null},group:{name:'QMC 鳩当番グループ（サンプル）',active:true},connection:{messaging:true,login:true},officialId:'@788fjcfb',cron:null};
-}
 async function load(){
- if(demo){data=sample();render();return;}
  const requestedMonth=month;
  try{const result=await request('/api/state?month='+requestedMonth);if(month!==requestedMonth)return;data=result;render();}
  catch(err){if(err.status===401){landing();}else{landing(err.message);}}
 }
 function brand() {
- return `<a class="brand" href="${demo ? '/demo' : '/'}">
+ return `<a class="brand" href="/">
    <span class="brand-icon">${icon('dove', 19)}</span><span>QMC 鳩当番</span>
  </a>`;
 }
@@ -55,7 +48,7 @@ function landing(error) {
  const notice = error || notices[new URLSearchParams(location.search).get('notice')];
  $('#app').innerHTML = `
    <div class="login-page">
-     <header class="login-header">${brand()}<a class="btn btn-small" href="/demo">体験版を見る ${icon('right', 14)}</a></header>
+     <header class="login-header">${brand()}</header>
      <main id="main" class="login-main">
        <section class="panel login-card">
          <h1>ログイン</h1>
@@ -97,12 +90,11 @@ function shell(content) {
        </nav>
        <div class="account">
          <span class="account-name">${e(data.user.name)}</span>
-         ${demo ? '<a class="btn btn-small" href="/">ログイン</a>' : '<button class="btn btn-small" data-action="logout">ログアウト</button>'}
+         <button class="btn btn-small" data-action="logout">ログアウト</button>
        </div>
      </div>
    </header>
    <main id="main" class="content">
-     ${demo ? '<div class="demo-bar">体験版のデータは、このブラウザに保存されます。</div>' : ''}
      ${!canEdit()?'<div class="notice" role="status"><strong>閲覧のみ</strong>当番表・メンバー・配信状況を確認できます。編集・送信には責任者からの権限付与が必要です。</div>':''}
      ${content}
    </main>
@@ -117,13 +109,10 @@ function calendarPage() {
  const pending = isPending();
  const currentDate = today();
  const date = now();
- const demoAssignment = data.schedule.draft[currentDate];
- const todayEntry = demo && demoAssignment
-  ? demoAssignment === 'off' ? { off: true } : { name: nameOf(demoAssignment) }
-  : publishedSchedule?.snapshot[currentDate];
+ const todayEntry = publishedSchedule?.snapshot[currentDate];
  const todayLabel = month !== currentDate.slice(0, 7) ? '今月の当番表で確認'
   : todayEntry?.off ? 'お休み'
-  : todayEntry?.name ? todayEntry.name : demo ? '未設定' : '共有前';
+  : todayEntry?.name ? todayEntry.name : '共有前';
  const blankDay = '<div class="day empty" aria-hidden="true"></div>';
  const monthDates = dates(month);
  const memberColors = memberColorsFor(monthDates.map(date => data.schedule.draft[date]));
@@ -150,7 +139,7 @@ function calendarPage() {
      <h2>当番表</h2>
      ${canEdit()?`<button class="btn btn-primary" data-action="preview" ${pending ? 'disabled' : ''}>${icon('send', 16)}LINE共有</button>`:''}
    </div>
-   ${!demo && !data.connection.messaging ? '<div class="notice">LINE連携を設定すると当番表を共有できます。<button class="text-link" data-view="settings">配信・設定を開く</button></div>' : ''}
+   ${!data.connection.messaging ? '<div class="notice">LINE連携を設定すると当番表を共有できます。<button class="text-link" data-view="settings">配信・設定を開く</button></div>' : ''}
    ${data.todayStatus === 'needs_attention' ? '<div class="notice" role="alert"><strong>今日の通知の受付を確認できませんでした</strong>担当者へ個別に連絡し、配信履歴を確認してください。</div>' : ''}
    ${pending ? '<div class="notice" role="status">LINEへの送信結果を確認中です。確認が終わると、この月を編集できます。</div>' : ''}
    ${data.publications[0]?.error ? `<div class="notice" role="alert">${e(data.publications[0].error)}</div>` : ''}
@@ -194,7 +183,7 @@ function membersPage(){
 }
 function settingsPage(){
  const accounts=data.admins;
- return `<div class="page-heading"><div><h2>配信・設定</h2></div><button class="btn" data-action="reload">最新の状態に更新</button></div><div class="section-grid"><div><section class="panel padded"><h3>LINEとの接続</h3><div class="settings-row"><div><strong>公式アカウント</strong><small>QMC 鳩当番リマインダー · ${e(data.officialId)}</small></div><span class="pill ${data.connection.messaging?'':'warn'}">${data.connection.messaging?'接続済み':'設定中'}</span></div><div class="settings-row"><div><strong>共有するグループ</strong><small>${e(data.group?.name||'まだ連携していません')}${data.group&&!data.group.active?' · Botが退出しています':''}</small></div><button class="btn btn-small" data-action="link-group">${data.group?.active?'連携を変更':'連携する'}</button></div><div class="settings-row"><div><strong>今日の配信</strong><small>共有済みの当番表をもとにしています。</small></div><span class="pill">${({not_shared:'まだ未共有',off:'お休み',accepted:'LINE受付済み',pending:'確認中',failed:'要確認',skipped:'要確認',needs_attention:'個別に連絡してください',scheduled:`${reminderTime}に配信予定`,waiting:'配信処理中'})[data.todayStatus]||'—'}</span></div><div class="settings-row"><div><strong>リマインドの時間</strong><small>日本時間 · 共有済みの当番表を使用</small></div><strong>毎日 ${reminderTime}</strong></div><div class="settings-row"><div><strong>自動配信の最終確認</strong><small>時刻を過ぎても更新されない場合は技術担当へご連絡ください。</small></div><span class="hint">${demo?'体験版では実行しません':data.cron?e(formatTime(data.cron.at)):'まだ実行されていません'}</span></div></section><p class="small-heading">${+month.slice(5)}月の配信結果</p><section class="panel table-wrap">${data.notifications.length?`<table class="status-table"><thead><tr><th>担当日</th><th>担当者</th><th>結果</th><th>受付時刻</th></tr></thead><tbody>${data.notifications.map(n=>`<tr><td>${+n.date.slice(-2)}日</td><td>${e(nameOf(n.member_id))}</td><td><span class="pill ${n.status==='accepted'?'':n.status==='pending'?'warn':'danger'}">${{accepted:'LINE受付済み',pending:'確認中',failed:'失敗',skipped:'要確認'}[n.status]}</span>${n.error?`<div class="hint">${e(n.error)}</div>`:''}</td><td>${e(formatTime(n.accepted_at))}</td></tr>`).join('')}</tbody></table>`:`<div class="empty-state">${icon('clock',30)}<h3>まだ配信履歴はありません</h3><p>当番表を共有すると、担当日の${reminderTime}から自動配信されます。</p></div>`}</section><p class="hint">「LINE受付済み」はLINEが送信要求を受け付けた状態です。到着や既読を確認する表示ではありません。</p></div><aside><section class="panel padded"><h3>今月のメッセージ通数</h3><p>${quota?`${quota.used} / ${quota.quota??'上限なし'} 通を使用中`:canEdit()?'共有前に残り通数を確認しましょう。':'メッセージ通数は、鳩係が確認できます。'}</p>${quota?`<p class="hint">${quota.groupSize?`${quota.groupSize}人のグループへの共有は、1回につき${quota.groupSize}通を使います。`:'グループ共有は、1回につき送信先の人数分の通数を使います。'}</p>`:''}<button class="btn btn-soft btn-small" data-action="quota">通数を確認</button></section>${data.user.role==='owner'?`<section class="panel padded" style="margin-top:20px"><h3>鳩係の引き継ぎ</h3><p>次の鳩係が一度ログインすると、ここに表示されます。グループ連携や友だち追加は不要です。</p>${accounts.map(m=>{const a=m.role?m:null;return `<div class="permissions"><strong>${e(m.name)}</strong><select aria-label="${e(m.name)}の権限" data-role="${e(m.login_id||m.id)}" data-login="${m.login_id?'true':'false'}" ${a?.is_self?'disabled':''}><option value="none" ${!a?'selected':''}>閲覧のみ</option><option value="editor" ${a?.role==='editor'?'selected':''}>鳩係</option><option value="owner" ${a?.role==='owner'?'selected':''}>責任者</option></select></div>`;}).join('')||'<p class="hint">ログインした人、または登録済みの部員が表示されます。</p>'}<p class="hint">責任者は、他の人への管理権限の追加・解除とバックアップの取得ができます。</p></section><section class="panel padded" style="margin-top:20px"><h3>データのバックアップ</h3><p>LINEのユーザーIDを含みます。責任者だけで大切に保管してください。</p><a class="btn btn-small" href="${demo?'#':'/api/export'}" ${demo?'data-action="demo-export"':''}>${icon('download',15)}データを書き出す</a></section>`:''}<p class="hint"><a href="/privacy">プライバシーについて</a></p></aside></div>`;
+ return `<div class="page-heading"><div><h2>配信・設定</h2></div><button class="btn" data-action="reload">最新の状態に更新</button></div><div class="section-grid"><div><section class="panel padded"><h3>LINEとの接続</h3><div class="settings-row"><div><strong>公式アカウント</strong><small>QMC 鳩当番リマインダー · ${e(data.officialId)}</small></div><span class="pill ${data.connection.messaging?'':'warn'}">${data.connection.messaging?'接続済み':'設定中'}</span></div><div class="settings-row"><div><strong>共有するグループ</strong><small>${e(data.group?.name||'まだ連携していません')}${data.group&&!data.group.active?' · Botが退出しています':''}</small></div><button class="btn btn-small" data-action="link-group">${data.group?.active?'連携を変更':'連携する'}</button></div><div class="settings-row"><div><strong>今日の配信</strong><small>共有済みの当番表をもとにしています。</small></div><span class="pill">${({not_shared:'まだ未共有',off:'お休み',accepted:'LINE受付済み',pending:'確認中',failed:'要確認',skipped:'要確認',needs_attention:'個別に連絡してください',scheduled:`${reminderTime}に配信予定`,waiting:'配信処理中'})[data.todayStatus]||'—'}</span></div><div class="settings-row"><div><strong>リマインドの時間</strong><small>日本時間 · 共有済みの当番表を使用</small></div><strong>毎日 ${reminderTime}</strong></div><div class="settings-row"><div><strong>自動配信の最終確認</strong><small>時刻を過ぎても更新されない場合は技術担当へご連絡ください。</small></div><span class="hint">${data.cron?e(formatTime(data.cron.at)):'まだ実行されていません'}</span></div></section><p class="small-heading">${+month.slice(5)}月の配信結果</p><section class="panel table-wrap">${data.notifications.length?`<table class="status-table"><thead><tr><th>担当日</th><th>担当者</th><th>結果</th><th>受付時刻</th></tr></thead><tbody>${data.notifications.map(n=>`<tr><td>${+n.date.slice(-2)}日</td><td>${e(nameOf(n.member_id))}</td><td><span class="pill ${n.status==='accepted'?'':n.status==='pending'?'warn':'danger'}">${{accepted:'LINE受付済み',pending:'確認中',failed:'失敗',skipped:'要確認'}[n.status]}</span>${n.error?`<div class="hint">${e(n.error)}</div>`:''}</td><td>${e(formatTime(n.accepted_at))}</td></tr>`).join('')}</tbody></table>`:`<div class="empty-state">${icon('clock',30)}<h3>まだ配信履歴はありません</h3><p>当番表を共有すると、担当日の${reminderTime}から自動配信されます。</p></div>`}</section><p class="hint">「LINE受付済み」はLINEが送信要求を受け付けた状態です。到着や既読を確認する表示ではありません。</p></div><aside><section class="panel padded"><h3>今月のメッセージ通数</h3><p>${quota?`${quota.used} / ${quota.quota??'上限なし'} 通を使用中`:canEdit()?'共有前に残り通数を確認しましょう。':'メッセージ通数は、鳩係が確認できます。'}</p>${quota?`<p class="hint">${quota.groupSize?`${quota.groupSize}人のグループへの共有は、1回につき${quota.groupSize}通を使います。`:'グループ共有は、1回につき送信先の人数分の通数を使います。'}</p>`:''}<button class="btn btn-soft btn-small" data-action="quota">通数を確認</button></section>${data.user.role==='owner'?`<section class="panel padded" style="margin-top:20px"><h3>鳩係の引き継ぎ</h3><p>次の鳩係が一度ログインすると、ここに表示されます。グループ連携や友だち追加は不要です。</p>${accounts.map(m=>{const a=m.role?m:null;return `<div class="permissions"><strong>${e(m.name)}</strong><select aria-label="${e(m.name)}の権限" data-role="${e(m.login_id||m.id)}" data-login="${m.login_id?'true':'false'}" ${a?.is_self?'disabled':''}><option value="none" ${!a?'selected':''}>閲覧のみ</option><option value="editor" ${a?.role==='editor'?'selected':''}>鳩係</option><option value="owner" ${a?.role==='owner'?'selected':''}>責任者</option></select></div>`;}).join('')||'<p class="hint">ログインした人、または登録済みの部員が表示されます。</p>'}<p class="hint">責任者は、他の人への管理権限の追加・解除とバックアップの取得ができます。</p></section><section class="panel padded" style="margin-top:20px"><h3>データのバックアップ</h3><p>LINEのユーザーIDを含みます。責任者だけで大切に保管してください。</p><a class="btn btn-small" href="/api/export">${icon('download',15)}データを書き出す</a></section>`:''}<p class="hint"><a href="/privacy">プライバシーについて</a></p></aside></div>`;
 }
 function render(){
  $('#app').innerHTML=shell(view==='calendar'?calendarPage():view==='members'?membersPage():settingsPage());
@@ -208,8 +197,7 @@ async function saveDay(date,id){
  const draft={...data.schedule.draft};if(id)draft[date]=id;else delete draft[date];
  saving=true;$('#modal').querySelectorAll('button').forEach(b=>b.disabled=true);
  try{
-  if(demo){data.schedule.draft=draft;data.schedule.version++;localStorage.setItem('qmc-demo-'+month,JSON.stringify(data.schedule));}
-  else{const result=await request('/api/schedules/'+month,'PUT',{draft,version:data.schedule.version});data.schedule.draft=draft;data.schedule.version=result.version;}
+  const result=await request('/api/schedules/'+month,'PUT',{draft,version:data.schedule.version});data.schedule.draft=draft;data.schedule.version=result.version;
   $('#modal').close();saving=false;render();toast('当番表を保存しました');
  }catch(err){saving=false;$('#modal').querySelectorAll('button').forEach(b=>b.disabled=false);modalError(err);}
 }
@@ -243,8 +231,7 @@ function preview(){
  const previewMonth=month,version=data.schedule.version,group=data.group;
  const revision=(data.publications[0]?.revision||0)+1,updated=revision>1;
  const card=calendarCard(previewMonth,freezeSchedule(previewMonth,data.schedule.draft,data.members),revision);
- const usage = demo ? '体験版のため、実際には送信されません。'
-  : quota?.groupSize ? `1回の共有で約${quota.groupSize}通を使用します。`
+ const usage = quota?.groupSize ? `1回の共有で約${quota.groupSize}通を使用します。`
   : 'グループ共有は、宛先の人数分のメッセージ通数を使います。';
  openModal(modalHeader('LINE共有のプレビュー', `共有先：${e(group?.name||'未連携')}`) + `
   <div class="modal-body">
@@ -258,7 +245,7 @@ function preview(){
   </div>`);
  $('#confirm-publish').addEventListener('click',async()=>{
   const b=$('#confirm-publish');b.disabled=true;b.textContent='送信しています…';
-  try{if(demo){$('#modal').close();toast('体験版のプレビューです。LINEには送信していません。');return;}
+  try{
    const result=await request('/api/schedules/'+previewMonth+'/publish','POST',{
     version,groupId:group.id,previewHash:await sha256(JSON.stringify([revision,calendarFlexMessage(card)]))
    });
@@ -271,7 +258,7 @@ function editMember(id){
  const m=data.members.find(m=>m.id===id);
  openModal(modalHeader(m.approved?'メンバーを編集':'部員を確認して登録',`LINEの表示名：${e(m.display_name)}`)+`<form id="member-form"><div class="modal-body"><label class="field">当番表に載せる名前<input id="member-name" maxlength="40" required value="${e(m.name)}" autocomplete="off"></label><label class="field"><span><input type="checkbox" id="member-approved" ${m.approved?'checked':''}> サークルの部員であることを確認した</span></label>${m.approved?`<label class="field"><span><input type="checkbox" id="member-archived" ${m.archived?'checked':''}> 今後の担当者の候補から外す</span></label><p class="hint">外した人の既存の担当日は、自動では変更されません。当番表を確認してください。</p>`:''}</div><div class="modal-foot"><button type="button" class="btn" data-cancel>戻る</button><button class="btn btn-primary" type="submit">${m.approved?'保存する':'メンバーに登録'}</button></div></form>`);
  $('#member-form').addEventListener('submit',async event=>{event.preventDefault();const b=event.submitter;b.disabled=true;const changes={name:$('#member-name').value.trim(),approved:$('#member-approved').checked,archived:$('#member-archived')?.checked||false};
-  try{if(!changes.name)throw new Error('名前を入力してください');if(demo){Object.assign(m,changes);render();}else{await request('/api/members/'+id,'PATCH',changes);await load();}$('#modal').close();toast('メンバーを保存しました');}catch(err){b.disabled=false;modalError(err);}
+  try{if(!changes.name)throw new Error('名前を入力してください');await request('/api/members/'+id,'PATCH',changes);await load();$('#modal').close();toast('メンバーを保存しました');}catch(err){b.disabled=false;modalError(err);}
  });
 }
 function groupModal(){
@@ -293,7 +280,7 @@ function groupModal(){
    form.querySelector('.modal-error')?.remove();
    options.innerHTML='<p class="hint" role="status">グループを確認中…</p>';
    try {
-     const result=demo?{groups:[{id:'sample',name:data.group.name,joinedAt:Date.now()}]}:await request('/api/group/candidates');
+     const result=await request('/api/group/candidates');
      if(!current()) return;
      groups=result.groups;
      options.innerHTML=groups.length?groups.map((group,index)=>`<label class="choice">
@@ -315,10 +302,10 @@ function groupModal(){
    refresh.disabled=true;
    options.querySelectorAll('input').forEach(input=>{input.disabled=true;});
    try {
-     if(!demo) await request('/api/group/confirm','POST',{groupId:group.id,name:group.name});
+     await request('/api/group/confirm','POST',{groupId:group.id,name:group.name});
      if(current()) modal.close();
      await load();
-     toast(demo?'体験版で共有先を確認しました':'共有先グループを連携しました');
+     toast('共有先グループを連携しました');
    } catch(error) {
      if(current()) {
        options.querySelectorAll('input').forEach(input=>{input.disabled=false;});
@@ -343,18 +330,17 @@ function bindCommon(){
    if(action==='this-month'){month=today().slice(0,7);await load();}
    if(action==='copy-friend'){await navigator.clipboard.writeText('https://line.me/R/ti/p/'+data.officialId);toast('友だち追加リンクをコピーしました');}
    if(action==='link-group')groupModal();
-   if(action==='quota'){quota=demo?{used:31,quota:200,groupSize:30}:await request('/api/quota');render();}
+   if(action==='quota'){quota=await request('/api/quota');render();}
    if(action==='logout'){await request('/api/logout','POST',{});location.href='/';}
-   if(action==='demo-export'){event.preventDefault();toast('体験版ではデータの書き出しは行いません。');}
   }catch(err){toast(err.message);}
  }));
  document.querySelectorAll('[data-role]').forEach(select=>select.addEventListener('change',async()=>{
   const isLogin=select.dataset.login==='true',m=data.admins.find(x=>(isLogin?x.login_id:x.id)===select.dataset.role),role=select.value;
   openModal(modalHeader('管理権限を変更')+`<div class="modal-body"><p>${e(m.name)}さんを「${{none:'閲覧のみ',editor:'鳩係',owner:'責任者'}[role]}」に変更します。</p><p class="hint">${role==='none'?'閲覧はできますが、編集・送信はできなくなります。':'当番表やメンバーを編集できます。'+(role==='owner'?'責任者は、他の人の権限変更とデータ書き出しもできます。':'')}</p></div><div class="modal-foot"><button class="btn" data-cancel>戻る</button><button class="btn btn-primary" id="apply-role">権限を変更する</button></div>`);
   $('#modal').addEventListener('close',()=>render(),{once:true});
-  $('#apply-role').addEventListener('click',async()=>{try{if(demo)toast('体験版では権限は変更されません');else{await request('/api/admins','POST',{...(isLogin?{loginId:m.login_id}:{memberId:m.id}),role});await load();toast('管理権限を変更しました');}$('#modal').close();}catch(err){modalError(err);}});
+  $('#apply-role').addEventListener('click',async()=>{try{await request('/api/admins','POST',{...(isLogin?{loginId:m.login_id}:{memberId:m.id}),role});await load();toast('管理権限を変更しました');$('#modal').close();}catch(err){modalError(err);}});
  }));
 }
 $('#modal').addEventListener('click',event=>{if(event.target===$('#modal'))$('#modal').close();});
 if(location.pathname==='/privacy')privacy();else load();
-setInterval(async()=>{if(!demo&&data&&!saving&&!$('#modal').open&&isPending())try{data=await request('/api/state?month='+month);render();}catch{/* keep the last saved screen visible */}},15000);
+setInterval(async()=>{if(data&&!saving&&!$('#modal').open&&isPending())try{data=await request('/api/state?month='+month);render();}catch{/* keep the last saved screen visible */}},15000);

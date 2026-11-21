@@ -108,8 +108,7 @@ svg { display: block; flex: none; }
 .btn-small { min-height: 34px; padding: 0 10px; font-size: 12px; }
 .icon-btn { width: 36px; height: 36px; min-height: 36px; padding: 0; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.demo-bar, .notice { margin-bottom: 16px; padding: 10px 14px; border: 1px solid var(--grid-line); border-radius: var(--radius); font-size: 13px; }
-.demo-bar { background: #f8f8f8; color: var(--muted); }
+.notice { margin-bottom: 16px; padding: 10px 14px; border: 1px solid var(--grid-line); border-radius: var(--radius); font-size: 13px; }
 .notice { background: var(--warning-bg); color: var(--warning); }
 .notice strong { display: block; }
 .notice .text-link { margin-left: 10px; }

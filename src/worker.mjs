@@ -359,7 +359,6 @@ async function route(r,env) {
   if(image) return sharedImage(r,env,image[1]);
   const assets={
     '/':{body:html,type:'text/html'},
-    '/demo':{body:html,type:'text/html'},
     '/privacy':{body:html,type:'text/html'},
     '/app.js':{body:client,type:'text/javascript'},
     '/style.css':{body:css,type:'text/css'},
