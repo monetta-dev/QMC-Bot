@@ -37,7 +37,11 @@ async function admin(r,env,mutate=false) {
   if(local(r,env)) return {line_user_id:'local-owner',name:'開発用 鳩係',role:'owner',csrf:'local-csrf'};
   const token=cookieValue(r,'qmc_session');
   if(!token) fail('LINEでログインしてください',401);
-  const a=await query(env,'SELECT a.*,s.csrf FROM sessions s JOIN admins a ON a.line_user_id=s.line_user_id WHERE s.token_hash=? AND s.expires_at>?',await sha256(token),Date.now()).first();
+  const a=await query(env,`SELECT s.line_user_id,COALESCE(a.name,u.name,'閲覧ユーザー') AS name,
+    COALESCE(a.role,'viewer') AS role,s.csrf FROM sessions s
+    LEFT JOIN admins a ON a.line_user_id=s.line_user_id
+    LEFT JOIN login_users u ON u.line_user_id=s.line_user_id
+    WHERE s.token_hash=? AND s.expires_at>?`,await sha256(token),Date.now()).first();
   if(!a) fail('ログインの有効期限が切れました',401);
   if(mutate && (r.headers.get('origin')!==new URL(r.url).origin || r.headers.get('x-csrf-token')!==a.csrf)) fail('画面を更新してもう一度操作してください',403);
   return a;
@@ -66,13 +70,16 @@ async function authCallback(r,env) {
   if(!user.sub || user.nonce!==old.nonce || String(user.aud)!==String(env.LINE_LOGIN_CHANNEL_ID) || user.exp*1000<=Date.now()) return redirect('/?notice=login-failed');
   if(env.BOOTSTRAP_OWNER_ID && user.sub===env.BOOTSTRAP_OWNER_ID && !await setting(env,'bootstrap_consumed')) {
     await env.DB.batch([
-      query(env,"INSERT INTO admins(line_user_id,role,name) SELECT ?,'owner',? WHERE NOT EXISTS(SELECT 1 FROM admins)",user.sub,user.name||'鳩係'),
+      query(env,"INSERT INTO admins(line_user_id,role,name) SELECT ?,'owner',? WHERE NOT EXISTS(SELECT 1 FROM admins WHERE role='owner')",user.sub,user.name||'鳩係'),
       setSetting(env,'bootstrap_consumed',true)
     ]);
   }
-  if(!await query(env,'SELECT 1 FROM admins WHERE line_user_id=?',user.sub).first()) return redirect('/?notice=not-admin');
   const token=randomToken(),csrf=randomToken();
-  await query(env,'INSERT INTO sessions VALUES(?,?,?,?)',await sha256(token),user.sub,csrf,Date.now()+7*DAY).run();
+  await env.DB.batch([
+    query(env,`INSERT INTO login_users(id,line_user_id,name,created_at) VALUES(?,?,?,?)
+      ON CONFLICT(line_user_id) DO UPDATE SET name=excluded.name`,crypto.randomUUID(),user.sub,String(user.name||'LINEユーザー').slice(0,100),Date.now()),
+    query(env,'INSERT INTO sessions VALUES(?,?,?,?)',await sha256(token),user.sub,csrf,Date.now()+7*DAY)
+  ]);
   return redirect('/',[secureCookie(r,'qmc_session',token,7*86400),secureCookie(r,'qmc_oauth','',0)]);
 }
 
@@ -120,18 +127,26 @@ async function processEvent(env,event) {
 
 async function state(r,env,a,month) {
   if(!validMonth(month)) fail('年月を確認してください');
+  const canEdit=['owner','editor'].includes(a.role);
   const [members,schedule,publications,notifications,group,admins,cron,currentPublication]=await Promise.all([
     query(env,'SELECT id,display_name,name,approved,following,archived FROM members ORDER BY archived,approved DESC,name').all(),
     query(env,'SELECT * FROM schedules WHERE month=?',month).first(),
     query(env,'SELECT id,month,revision,snapshot,status,created_at,accepted_at,error FROM publications WHERE month=? ORDER BY revision DESC LIMIT 20',month).all(),
     query(env,'SELECT id,date,member_id,status,accepted_at,error FROM notifications WHERE date LIKE ? ORDER BY date DESC',month+'-%').all(),
     setting(env,'group'),
-    query(env,'SELECT m.id,a.role,a.name,(a.line_user_id=?) AS is_self FROM admins a LEFT JOIN members m ON m.line_user_id=a.line_user_id',a.line_user_id).all(),
+    a.role==='owner'?query(env,`SELECT u.id AS login_id,m.id,COALESCE(m.name,u.name) AS name,a.role,
+      (u.line_user_id=?) AS is_self FROM login_users u
+      LEFT JOIN members m ON m.line_user_id=u.line_user_id LEFT JOIN admins a ON a.line_user_id=u.line_user_id
+      UNION ALL SELECT NULL,m.id,m.name,a.role,(m.line_user_id=?) AS is_self FROM members m
+      LEFT JOIN admins a ON a.line_user_id=m.line_user_id
+      WHERE m.approved=1 AND m.archived=0 AND NOT EXISTS(SELECT 1 FROM login_users u WHERE u.line_user_id=m.line_user_id)
+      ORDER BY name`,a.line_user_id,a.line_user_id).all():Promise.resolve({results:[]}),
     setting(env,'cron'),
     query(env,'SELECT p.id,p.month,p.revision,p.snapshot,p.status,p.accepted_at FROM publications p JOIN schedules s ON s.published_id=p.id WHERE s.month=?',month).first()
   ]);
-  const pubs=publications.results.map(p=>({...p,snapshot:JSON.parse(p.snapshot)}));
-  const current=currentPublication?{...currentPublication,snapshot:JSON.parse(currentPublication.snapshot)}:null;
+  const publicSnapshot=raw=>Object.fromEntries(Object.entries(JSON.parse(raw)).map(([day,{userId,...entry}])=>[day,entry]));
+  const pubs=publications.results.map(p=>({...p,snapshot:publicSnapshot(p.snapshot)}));
+  const current=currentPublication?{...currentPublication,snapshot:publicSnapshot(currentPublication.snapshot)}:null;
   const t=jstParts(),entry=current?.snapshot[t.date],job=notifications.results.find(n=>n.date===t.date);
   let todayStatus=month!==t.month?null:!entry?'not_shared':entry.off?'off':job?.status||'scheduled';
   if(todayStatus==='scheduled') {
@@ -139,9 +154,9 @@ async function state(r,env,a,month) {
     if(phase==='ended') todayStatus='needs_attention';
     if(phase==='sending') todayStatus='waiting';
   }
-  return json({user:{name:a.name,role:a.role},csrf:a.csrf,month,members:members.results,
+  return json({user:{name:a.name,role:a.role},csrf:a.csrf,month,members:canEdit?members.results:members.results.filter(m=>m.approved&&!m.archived).map(({display_name,...m})=>({...m,display_name:m.name})),
     schedule:{draft:JSON.parse(schedule?.draft||'{}'),version:schedule?.version||0,publishedId:schedule?.published_id||null},
-    publications:pubs,published:current,todayStatus,notifications:notifications.results,group,admins:admins.results,cron,
+    publications:pubs,published:current,todayStatus,notifications:notifications.results,group:canEdit?group:group?{name:group.name,active:group.active}:null,admins:admins.results,cron,
     connection:{messaging:!!(env.LINE_CHANNEL_SECRET&&env.LINE_CHANNEL_ACCESS_TOKEN),login:!!env.LINE_LOGIN_CHANNEL_ID},
     officialId:env.LINE_OFFICIAL_ID||'@788fjcfb',local:local(r,env)});
 }
@@ -293,6 +308,7 @@ async function api(r,env) {
     await query(env,'DELETE FROM sessions WHERE token_hash=?',await sha256(cookieValue(r,'qmc_session')||'')).run();
     return new Response('{}',{headers:{'Content-Type':'application/json','Set-Cookie':secureCookie(r,'qmc_session','',0)}});
   }
+  if(!['owner','editor'].includes(a.role)) fail('閲覧のみのアカウントです。操作には責任者からの権限付与が必要です',403);
   let match=/^\/api\/schedules\/(20\d{2}-\d{2})(\/publish)?$/.exec(path);
   if(match&&r.method==='PUT'&&!match[2]) return saveDraft(env,a,match[1],await body(r));
   if(match&&r.method==='POST'&&match[2]) return publishSchedule(r,env,a,match[1]);
@@ -314,15 +330,17 @@ async function api(r,env) {
   if(path==='/api/admins'&&r.method==='POST') {
     if(a.role!=='owner') fail('責任者だけが権限を変更できます',403);
     const data=await body(r);if(!['owner','editor','none'].includes(data.role)) fail('権限を確認してください');
-    const m=await query(env,'SELECT * FROM members WHERE id=? AND approved=1 AND archived=0',String(data.memberId)).first();
-    if(!m) fail('登録済みの部員を選んでください');
+    const m=data.loginId
+      ?await query(env,'SELECT id,line_user_id,name FROM login_users WHERE id=?',String(data.loginId)).first()
+      :await query(env,'SELECT * FROM members WHERE id=? AND approved=1 AND archived=0',String(data.memberId)).first();
+    if(!m) fail('ログイン済みの人、または登録済みの部員を選んでください');
     if(m.line_user_id===a.line_user_id) fail('自分の権限はこの画面から変更できません');
     await env.DB.batch([data.role==='none'?query(env,'DELETE FROM admins WHERE line_user_id=?',m.line_user_id):query(env,'INSERT INTO admins VALUES(?,?,?) ON CONFLICT(line_user_id) DO UPDATE SET role=excluded.role,name=excluded.name',m.line_user_id,data.role,m.name),audit(env,a.line_user_id,'admin_changed',`${m.id}:${data.role}`)]);
     return json({ok:true});
   }
   if(path==='/api/export'&&r.method==='GET') {
     if(a.role!=='owner') fail('責任者だけが書き出せます',403);
-    const tables=['members','admins','schedules','publications','notifications','app_settings'];const result={format:'qmc-backup-v1',exportedAt:new Date().toISOString()};
+    const tables=['members','admins','login_users','schedules','publications','notifications','app_settings'];const result={format:'qmc-backup-v1',exportedAt:new Date().toISOString()};
     for(const table of tables) result[table]=(await env.DB.prepare(`SELECT * FROM ${table}`).all()).results;
     return new Response(JSON.stringify(result,null,2),{headers:{'Content-Type':'application/json','Content-Disposition':`attachment; filename="qmc-backup-${jstParts().date}.json"`,'Cache-Control':'no-store'}});
   }

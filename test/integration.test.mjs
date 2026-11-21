@@ -7,12 +7,22 @@ import {freezeSchedule} from '../src/domain.mjs';
 import {calendarCard,calendarFlexMessage} from '../src/calendar-flex.mjs';
 import '../scripts/build.mjs';
 let mf,db;
-const calls=[],accepted=new Set();let failure=null,profileName='テスト部員',loginAudience='test-login';
+const calls=[],accepted=new Set();let failure=null,profileName='テスト部員',loginAudience='test-login',loginUserId='Uowner';
 const secret='test-webhook-secret';
 const testGroup='C'+'1'.repeat(32), unrelatedGroup='C'+'2'.repeat(32);
 const adminHeaders={Cookie:'qmc_session=test-session',Origin:'https://qmc.test','X-CSRF-Token':'test-csrf','Content-Type':'application/json'};
 const month='2026-11',fixture=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2uoAAAAASUVORK5CYII=','base64');
 async function api(path,method='GET',body){return mf.dispatchFetch('https://qmc.test'+path,{method,headers:adminHeaders,...(body?{body:JSON.stringify(body)}:{})});}
+async function loginAs(id){
+ loginUserId=id;
+ try{
+  const start=await mf.dispatchFetch('https://qmc.test/auth/line',{redirect:'manual'});
+  const state=new URL(start.headers.get('location')).searchParams.get('state');
+  const result=await mf.dispatchFetch('https://qmc.test/auth/callback?code=valid&state='+state,{redirect:'manual',headers:{Cookie:start.headers.get('set-cookie').split(';')[0]}});
+  assert.equal(result.headers.get('location'),'/');
+  return result.headers.get('set-cookie').match(/qmc_session=[^;,]+/)[0];
+ }finally{loginUserId='Uowner';}
+}
 function publish(version,previewHash='',groupId=testGroup){
  return api('/api/schedules/'+month+'/publish','POST',{version,previewHash,groupId});
 }
@@ -24,10 +34,10 @@ async function sendEvent(event){
 }
 before(async()=>{
  const entry=`import app,{runScheduled} from './app.mjs'; export default {async fetch(r,env,ctx){if(new URL(r.url).pathname==='/__test_tick'){await runScheduled(env,Number(r.headers.get('X-Now')));return new Response('ok');}return app.fetch(r,env,ctx);}};`;
- mf=new Miniflare({modules:[{type:'ESModule',path:'test-entry.mjs',contents:entry},{type:'ESModule',path:'app.mjs',contents:await readFile('dist/worker.mjs','utf8')}],compatibilityDate:'2026-07-30',d1Databases:{DB:'test-db'},bindings:{LINE_CHANNEL_SECRET:secret,LINE_CHANNEL_ACCESS_TOKEN:'test-token',LINE_LOGIN_CHANNEL_ID:'test-login',LINE_LOGIN_CHANNEL_SECRET:'test-login-secret'},outboundService:async r=>{
+ mf=new Miniflare({modules:[{type:'ESModule',path:'test-entry.mjs',contents:entry},{type:'ESModule',path:'app.mjs',contents:await readFile('dist/worker.mjs','utf8')}],compatibilityDate:'2026-07-30',d1Databases:{DB:'test-db'},bindings:{LINE_CHANNEL_SECRET:secret,LINE_CHANNEL_ACCESS_TOKEN:'test-token',LINE_LOGIN_CHANNEL_ID:'test-login',LINE_LOGIN_CHANNEL_SECRET:'test-login-secret',BOOTSTRAP_OWNER_ID:'Uowner'},outboundService:async r=>{
   const url=new URL(r.url);
   if(url.pathname==='/oauth2/v2.1/token')return Response.json({id_token:'test-id-token'});
-  if(url.pathname==='/oauth2/v2.1/verify'){const form=new URLSearchParams(await r.text());return Response.json({sub:'Uowner',name:'責任者',nonce:form.get('nonce'),aud:loginAudience,exp:Math.floor(Date.now()/1000)+3600});}
+  if(url.pathname==='/oauth2/v2.1/verify'){const form=new URLSearchParams(await r.text());return Response.json({sub:loginUserId,name:loginUserId==='Uowner'?'責任者':'確認する人',nonce:form.get('nonce'),aud:loginAudience,exp:Math.floor(Date.now()/1000)+3600});}
   if(url.pathname.includes('/profile/'))return Response.json({displayName:profileName});
   if(url.pathname.includes('/group/')&&url.pathname.includes('/member/')) {
    return url.pathname===`/v2/bot/group/${testGroup}/member/Uowner`?Response.json({userId:'Uowner'}):Response.json({}, {status:404});
@@ -43,7 +53,7 @@ before(async()=>{
   return Response.json({});
  }});
  db=await mf.getD1Database('DB');
- for(const file of ['0001.sql','0002.sql','0003.sql']) {
+ for(const file of ['0001.sql','0002.sql','0003.sql','0004.sql']) {
   await db.batch((await readFile(`migrations/${file}`,'utf8')).split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
  }
  await db.batch([sql("INSERT INTO admins VALUES('Uowner','owner','責任者')"),sql('INSERT INTO sessions VALUES(?,?,?,?)',createHash('sha256').update('test-session').digest('hex'),'Uowner','test-csrf',Date.now()+86400000)]);
@@ -64,6 +74,61 @@ test('production API rejects unauthenticated and cross-origin writes',async()=>{
  assert.equal((await mf.dispatchFetch('https://qmc.test/api/state')).status,401);
  assert.equal((await mf.dispatchFetch('http://localhost/api/state')).status,401);
  assert.equal((await mf.dispatchFetch('https://qmc.test/api/group/confirm',{method:'POST',headers:{Cookie:'qmc_session=test-session','Content-Type':'application/json'},body:'{}'})).status,403);
+});
+
+test('any LINE account can view before a group is linked; only the designated bootstrap gets owner permission',async()=>{
+ await sql('DELETE FROM admins').run();
+ const cookie=await loginAs('Ureviewer');
+ const response=await mf.dispatchFetch('https://qmc.test/api/state?month='+month,{headers:{Cookie:cookie}});
+ assert.equal(response.status,200);
+ const state=await response.json();
+ assert.equal(state.user.role,'viewer');assert.equal(state.group,null);assert.deepEqual(state.admins,[]);
+ assert.equal((await sql('SELECT count(*) AS n FROM admins').first()).n,0);
+ assert.equal(await sql("SELECT value FROM app_settings WHERE key='bootstrap_consumed'").first(),null);
+ const headers={...adminHeaders,Cookie:cookie,'X-CSRF-Token':state.csrf};
+ const before=calls.length;
+ for(const [path,method,body] of [
+  ['/api/schedules/'+month,'PUT',{draft:{},version:0}],
+  ['/api/schedules/'+month+'/publish','POST',{version:0}],
+  ['/api/members/unknown','PATCH',{name:'改変',approved:true,archived:false}],
+  ['/api/group/confirm','POST',{groupId:testGroup}],
+  ['/api/admins','POST',{role:'owner'}],
+  ['/api/group/candidates','GET'],['/api/quota','GET'],['/api/export','GET']
+ ]){
+  const denied=await mf.dispatchFetch('https://qmc.test'+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});
+  assert.equal(denied.status,403,path);
+ }
+ assert.equal(calls.length,before);
+ assert.equal((await sql('SELECT count(*) AS n FROM schedules').first()).n,0);
+ await loginAs('Uowner');
+ assert.equal((await sql("SELECT role FROM admins WHERE line_user_id='Uowner'").first()).role,'owner');
+ assert.equal((await sql('SELECT count(*) AS n FROM admins').first()).n,1);
+ const loggedOut=await mf.dispatchFetch('https://qmc.test/api/logout',{method:'POST',headers,body:'{}'});
+ assert.equal(loggedOut.status,200);
+ assert.equal((await mf.dispatchFetch('https://qmc.test/api/state',{headers:{Cookie:cookie}})).status,401);
+});
+
+test('a responsible person can grant permission to a login-only user and revocation affects existing sessions',async()=>{
+ const cookie=await loginAs('Uhandover');
+ const getState=async()=>{const r=await mf.dispatchFetch('https://qmc.test/api/state?month='+month,{headers:{Cookie:cookie}});assert.equal(r.status,200);return r.json();};
+ const initial=await getState();assert.equal(initial.user.role,'viewer');
+ const ownerState=await (await api('/api/state?month='+month)).json();
+ const account=ownerState.admins.find(x=>x.name==='確認する人'&&x.login_id);
+ // Match the opaque login identity without requiring friend registration.
+ const target=await sql("SELECT id FROM login_users WHERE line_user_id='Uhandover'").first();
+ assert.ok(ownerState.admins.some(x=>x.login_id===target.id));assert.ok(account);
+ assert.equal((await api('/api/admins','POST',{loginId:target.id,role:'editor'})).status,200);
+ assert.equal((await getState()).user.role,'editor');
+ const headers={...adminHeaders,Cookie:cookie,'X-CSRF-Token':initial.csrf};
+ assert.equal((await mf.dispatchFetch('https://qmc.test/api/schedules/2026-12',{method:'PUT',headers,body:JSON.stringify({version:0,draft:{}})})).status,200);
+ assert.equal((await mf.dispatchFetch('https://qmc.test/api/admins',{method:'POST',headers,body:JSON.stringify({loginId:target.id,role:'owner'})})).status,403);
+ assert.equal((await api('/api/admins','POST',{loginId:target.id,role:'owner'})).status,200);
+ assert.equal((await getState()).user.role,'owner');
+ assert.equal((await mf.dispatchFetch('https://qmc.test/api/admins',{method:'POST',headers,body:JSON.stringify({loginId:target.id,role:'none'})})).status,400);
+ assert.equal((await api('/api/admins','POST',{loginId:target.id,role:'none'})).status,200);
+ assert.equal((await getState()).user.role,'viewer');
+ assert.equal((await mf.dispatchFetch('https://qmc.test/api/schedules/2026-12',{method:'PUT',headers,body:JSON.stringify({version:1,draft:{}})})).status,403);
+ await sql("DELETE FROM schedules WHERE month='2026-12'").run();
 });
 test('LINE login binds state to the browser, validates audience, and consumes state only once',async()=>{
  const begin=async()=>{const r=await mf.dispatchFetch('https://qmc.test/auth/line',{redirect:'manual'});assert.equal(r.status,302);const loc=new URL(r.headers.get('location'));assert.equal(loc.searchParams.get('code_challenge_method'),'S256');return {state:loc.searchParams.get('state'),cookie:r.headers.get('set-cookie').split(';')[0]};};
@@ -148,6 +213,19 @@ test('previously shared image URLs continue to serve the original image',async()
  const image=await mf.dispatchFetch('https://qmc.test/line-images/'+token+'.png');
  assert.equal(image.headers.get('content-type'),'image/png');
  assert.deepEqual(Buffer.from(await image.arrayBuffer()),fixture);
+});
+
+test('viewers can inspect a published calendar without receiving LINE identifiers or pending friends',async()=>{
+ await sendEvent({type:'follow',source:{type:'user',userId:'Upending'},timestamp:5000,webhookEventId:'pending-friend'});
+ const cookie=await loginAs('Uoutsider');
+ const response=await mf.dispatchFetch('https://qmc.test/api/state?month='+month,{headers:{Cookie:cookie}});
+ assert.equal(response.status,200);
+ const state=await response.json();
+ assert.equal(state.user.role,'viewer');assert.ok(state.published);assert.equal(state.members.length,1);
+ assert.equal(state.group.name,'テストグループ');assert.equal(state.group.id,undefined);assert.deepEqual(state.admins,[]);
+ for(const id of ['Umember','Upending','Uowner',testGroup])assert.ok(!JSON.stringify(state).includes(id),id);
+ assert.equal(Object.values(state.published.snapshot)[0].name,'鳩係テスト');
+ assert.equal(Object.values(state.published.snapshot)[0].userId,undefined);
 });
 test('08:00 JST sends only the published recipient, retries without duplicates, stops at 08:15',async()=>{
  const p=await sql('SELECT * FROM publications ORDER BY revision DESC LIMIT 1').first();

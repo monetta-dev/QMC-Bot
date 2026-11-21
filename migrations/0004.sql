@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS login_users (
+ id TEXT PRIMARY KEY, line_user_id TEXT UNIQUE NOT NULL,
+ name TEXT NOT NULL, created_at INTEGER NOT NULL
+);

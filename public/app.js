@@ -1,4 +1,4 @@
-/* No member data is fetched until the server has checked the administrator session. */
+/* Member data requires a LINE session; editing additionally requires caretaker permission. */
 import {calendarWeekdays as weekdays,freezeSchedule,reminderPhase,reminderTime} from '../src/domain.mjs';
 import {sha256} from '../src/line.mjs';
 import {calendarCard,calendarFlexMessage,calendarColors,memberColorsFor} from '../src/calendar-flex.mjs';
@@ -33,7 +33,7 @@ async function request(path,method='GET',body){
 function sample(){
  const members=['田中','佐藤','鈴木','山本','高橋','渡辺'].map((name,i)=>({id:'demo-'+i,name,display_name:name+'（サンプル）',approved:1,following:1,archived:0}));
  const saved=JSON.parse(localStorage.getItem('qmc-demo-'+month)||'null');
- return {user:{name:'鳩係の体験用',role:'owner'},csrf:'demo',month,members,publications:[],notifications:[],admins:[],schedule:saved||{draft:Object.fromEntries(dates(month).filter((d,i)=>i<days(month)-5).map((d,i)=>[d,i%9===8?'off':members[i%6].id])),version:0,publishedId:null},group:{name:'QMC 鳩当番グループ（サンプル）',active:true},connection:{messaging:true,login:true},officialId:'@788fjcfb',cron:null};
+ return {user:{name:'鳩係の体験用',role:new URLSearchParams(location.search).get('access')==='viewer'?'viewer':'owner'},csrf:'demo',month,members,publications:[],notifications:[],admins:members.map((m,i)=>({id:m.id,name:m.name,role:i===0?'owner':null,is_self:i===0})),schedule:saved||{draft:Object.fromEntries(dates(month).filter((d,i)=>i<days(month)-5).map((d,i)=>[d,i%9===8?'off':members[i%6].id])),version:0,publishedId:null},group:{name:'QMC 鳩当番グループ（サンプル）',active:true},connection:{messaging:true,login:true},officialId:'@788fjcfb',cron:null};
 }
 async function load(){
  if(demo){data=sample();render();return;}
@@ -59,7 +59,7 @@ function landing(error) {
      <main id="main" class="login-main">
        <section class="panel login-card">
          <h1>ログイン</h1>
-         <p>鳩係・責任者はLINEアカウントでログインしてください。</p>
+         <p>LINEアカウントでどなたでも閲覧できます。編集・送信には責任者からの権限付与が必要です。</p>
          ${notice ? `<div class="notice" role="alert">${e(notice)}</div>` : ''}
          <a class="btn btn-primary login-button" href="/auth/line">LINEでログイン ${icon('right', 16)}</a>
          <div class="login-member">
@@ -73,9 +73,10 @@ function landing(error) {
    </div>`;
 }
 function privacy(){
- $('#app').innerHTML=`<main class="privacy" id="main">${brand()}<h1>プライバシーについて</h1><p>このアプリは、QMCの鳩当番の管理とLINEでのリマインドに使用します。</p><h2>保存する情報</h2><p>LINEのユーザーID・表示名、鳩係が設定した名前、友だち登録の状態、担当日、管理権限、配信履歴を保存します。グループの通常の会話や、個別トークの通常の本文は保存しません。</p><h2>利用目的と閲覧者</h2><p>担当者への通知と当番表の作成に使用します。管理画面は登録された鳩係・責任者のみ利用できます。当番表の名前と担当日は、連携したLINEグループに共有されます。過去に共有した画像は、専用リンクを知っている人が閲覧できます。</p><h2>外部サービス</h2><p>ログインとメッセージ送信にLINE、アプリの実行とデータ保存にCloudflareを利用します。</p><h2>退会・変更・削除</h2><p>退会時は鳩係に連絡してください。今後の当番から外し、個人情報の削除が必要な場合は技術担当者が対応します。すでにLINEグループに送られた当番表は、アプリから回収できません。</p><h2>お問い合わせ</h2><p>サークルの鳩係・責任者にお問い合わせください。</p><p><a href="/">トップへ戻る</a></p></main>`;
+ $('#app').innerHTML=`<main class="privacy" id="main">${brand()}<h1>プライバシーについて</h1><p>このアプリは、QMCの鳩当番の管理とLINEでのリマインドに使用します。</p><h2>保存する情報</h2><p>LINEのユーザーID・表示名、鳩係が設定した名前、友だち登録の状態、担当日、管理権限、配信履歴を保存します。グループの通常の会話や、個別トークの通常の本文は保存しません。</p><h2>利用目的と閲覧者</h2><p>担当者への通知と当番表の作成に使用します。LINEアカウントでログインした方は、当番表・登録済みメンバーの名前・配信状況を閲覧できます。編集・LINE送信・メンバー管理は、権限を持つ鳩係・責任者のみ行えます。ログインした方の表示名は、責任者の権限管理画面に表示されます。当番表の名前と担当日は、連携したLINEグループに共有されます。過去に共有した画像は、専用リンクを知っている人が閲覧できます。</p><h2>外部サービス</h2><p>ログインとメッセージ送信にLINE、アプリの実行とデータ保存にCloudflareを利用します。</p><h2>退会・変更・削除</h2><p>退会時は鳩係に連絡してください。今後の当番から外し、個人情報の削除が必要な場合は技術担当者が対応します。すでにLINEグループに送られた当番表は、アプリから回収できません。</p><h2>お問い合わせ</h2><p>サークルの鳩係・責任者にお問い合わせください。</p><p><a href="/">トップへ戻る</a></p></main>`;
 }
 function activeMembers(){return data.members.filter(m=>m.approved&&!m.archived);}
+function canEdit(){return ['owner','editor'].includes(data.user.role);}
 function published(){return data.published||data.publications.find(p=>p.id===data.schedule.publishedId);}
 function isPending(){return data.publications.some(p=>p.status==='pending');}
 function nameOf(id){return data.members.find(m=>m.id===id)?.name||'登録解除された人';}
@@ -102,6 +103,7 @@ function shell(content) {
    </header>
    <main id="main" class="content">
      ${demo ? '<div class="demo-bar">体験版のデータは、このブラウザに保存されます。</div>' : ''}
+     ${!canEdit()?'<div class="notice" role="status"><strong>閲覧のみ</strong>当番表・メンバー・配信状況を確認できます。編集・送信には責任者からの権限付与が必要です。</div>':''}
      ${content}
    </main>
  </div>`;
@@ -135,8 +137,8 @@ function calendarPage() {
   const assignmentClass = id === 'off' ? 'off' : id ? 'assigned' : 'unset';
   cells.push(`
     <button class="day ${date === currentDate ? 'today' : ''} ${dayOfWeek === 0 ? 'sunday' : dayOfWeek === 6 ? 'saturday' : ''}"
-      data-day="${date}" aria-label="${day}日 ${weekdays[dayOfWeek]}曜日、${e(assignment)}。担当者を選択"
-      ${date === currentDate ? 'aria-current="date"' : ''} ${pending ? 'disabled' : ''}>
+      ${canEdit()?`data-day="${date}"`:'aria-disabled="true"'} aria-label="${day}日 ${weekdays[dayOfWeek]}曜日、${e(assignment)}${canEdit()?'。担当者を選択':''}"
+      ${date === currentDate ? 'aria-current="date"' : ''} ${pending||!canEdit() ? 'disabled' : ''}>
       <span class="day-number">${day}</span>
       <span class="assignment ${assignmentClass}"${memberTint(id)}>${e(assignment)}</span>
     </button>`);
@@ -146,7 +148,7 @@ function calendarPage() {
  return `
    <div class="page-heading">
      <h2>当番表</h2>
-     <button class="btn btn-primary" data-action="preview" ${pending ? 'disabled' : ''}>${icon('send', 16)}LINE共有</button>
+     ${canEdit()?`<button class="btn btn-primary" data-action="preview" ${pending ? 'disabled' : ''}>${icon('send', 16)}LINE共有</button>`:''}
    </div>
    ${!demo && !data.connection.messaging ? '<div class="notice">LINE連携を設定すると当番表を共有できます。<button class="text-link" data-view="settings">配信・設定を開く</button></div>' : ''}
    ${data.todayStatus === 'needs_attention' ? '<div class="notice" role="alert"><strong>今日の通知の受付を確認できませんでした</strong>担当者へ個別に連絡し、配信履歴を確認してください。</div>' : ''}
@@ -169,7 +171,7 @@ function calendarPage() {
        <div class="calendar">${cells.join('')}</div>
        <div class="calendar-footer">
          <div class="calendar-totals"><span>担当あり <b>${assigned}</b>日</span><span>お休み <b>${off}</b>日</span><span class="${missing ? 'unassigned-count' : ''}">未設定 <b>${missing}</b>日</span></div>
-         ${publishedSchedule ? `<span>${e(formatTime(publishedSchedule.accepted_at))} 共有</span>` : '<span>編集は自動保存</span>'}
+         ${publishedSchedule ? `<span>${e(formatTime(publishedSchedule.accepted_at))} 共有</span>` : canEdit()?'<span>編集は自動保存</span>':'<span>まだ共有されていません</span>'}
        </div>
      </section>
      <aside class="side-panel">
@@ -191,11 +193,12 @@ function membersPage(){
  return `<div class="page-heading"><div><h2>メンバー</h2></div><button class="btn" data-action="reload">一覧を更新</button></div><div class="section-grid"><section class="panel"><div class="padded"><h3>部員の一覧 <span class="badge">${data.members.filter(m=>!m.archived).length}人</span></h3><p>${pending?`${pending}人が確認待ちです。知っている部員か確認してから登録してください。`:''}</p></div>${data.members.length?data.members.map(m=>`<div class="member-row"><span class="avatar">${e(m.name.slice(0,1))}</span><div class="member-info"><strong>${e(m.name)}</strong><small>LINE表示名：${e(m.display_name)}</small></div><div class="actions"><span class="pill ${m.archived?'neutral':!m.following?'danger':!m.approved?'warn':''}">${m.archived?'担当から除外':!m.following?'通知できません':!m.approved?'確認待ち':'登録済み'}</span><button class="btn btn-small" data-member="${e(m.id)}">${m.approved?'編集':'確認する'}</button></div></div>`).join(''):`<div class="empty-state">${icon('users',35)}<h3>メンバーは未登録です</h3><p>公式LINEを友だち追加すると、確認待ちのメンバーが表示されます。</p></div>`}</section><aside class="panel padded side-qr"><h3>LINE友だち追加</h3><img class="qr" src="https://qr-official.line.me/gs/M_788fjcfb_GW.png" alt="QMC 鳩当番リマインダーの友だち追加QRコード" width="160" height="160"><p class="friend-id">${e(data.officialId)}</p><button class="btn btn-soft" data-action="copy-friend">友だち追加リンクをコピー</button><p class="hint">追加済みなのに表示されない場合は、Botの個別トークに「登録」と送ってから一覧を更新してください。</p></aside></div>`;
 }
 function settingsPage(){
- const approved=activeMembers();
- return `<div class="page-heading"><div><h2>配信・設定</h2></div><button class="btn" data-action="reload">最新の状態に更新</button></div><div class="section-grid"><div><section class="panel padded"><h3>LINEとの接続</h3><div class="settings-row"><div><strong>公式アカウント</strong><small>QMC 鳩当番リマインダー · ${e(data.officialId)}</small></div><span class="pill ${data.connection.messaging?'':'warn'}">${data.connection.messaging?'接続済み':'設定中'}</span></div><div class="settings-row"><div><strong>共有するグループ</strong><small>${e(data.group?.name||'まだ連携していません')}${data.group&&!data.group.active?' · Botが退出しています':''}</small></div><button class="btn btn-small" data-action="link-group">${data.group?.active?'連携を変更':'連携する'}</button></div><div class="settings-row"><div><strong>今日の配信</strong><small>共有済みの当番表をもとにしています。</small></div><span class="pill">${({not_shared:'まだ未共有',off:'お休み',accepted:'LINE受付済み',pending:'確認中',failed:'要確認',skipped:'要確認',needs_attention:'個別に連絡してください',scheduled:`${reminderTime}に配信予定`,waiting:'配信処理中'})[data.todayStatus]||'—'}</span></div><div class="settings-row"><div><strong>リマインドの時間</strong><small>日本時間 · 共有済みの当番表を使用</small></div><strong>毎日 ${reminderTime}</strong></div><div class="settings-row"><div><strong>自動配信の最終確認</strong><small>時刻を過ぎても更新されない場合は技術担当へご連絡ください。</small></div><span class="hint">${demo?'体験版では実行しません':data.cron?e(formatTime(data.cron.at)):'まだ実行されていません'}</span></div></section><p class="small-heading">${+month.slice(5)}月の配信結果</p><section class="panel table-wrap">${data.notifications.length?`<table class="status-table"><thead><tr><th>担当日</th><th>担当者</th><th>結果</th><th>受付時刻</th></tr></thead><tbody>${data.notifications.map(n=>`<tr><td>${+n.date.slice(-2)}日</td><td>${e(nameOf(n.member_id))}</td><td><span class="pill ${n.status==='accepted'?'':n.status==='pending'?'warn':'danger'}">${{accepted:'LINE受付済み',pending:'確認中',failed:'失敗',skipped:'要確認'}[n.status]}</span>${n.error?`<div class="hint">${e(n.error)}</div>`:''}</td><td>${e(formatTime(n.accepted_at))}</td></tr>`).join('')}</tbody></table>`:`<div class="empty-state">${icon('clock',30)}<h3>まだ配信履歴はありません</h3><p>当番表を共有すると、担当日の${reminderTime}から自動配信されます。</p></div>`}</section><p class="hint">「LINE受付済み」はLINEが送信要求を受け付けた状態です。到着や既読を確認する表示ではありません。</p></div><aside><section class="panel padded"><h3>今月のメッセージ通数</h3><p>${quota?`${quota.used} / ${quota.quota??'上限なし'} 通を使用中`:'共有前に残り通数を確認しましょう。'}</p>${quota?`<p class="hint">${quota.groupSize?`${quota.groupSize}人のグループへの共有は、1回につき${quota.groupSize}通を使います。`:'グループ共有は、1回につき送信先の人数分の通数を使います。'}</p>`:''}<button class="btn btn-soft btn-small" data-action="quota">通数を確認</button></section>${data.user.role==='owner'?`<section class="panel padded" style="margin-top:20px"><h3>鳩係の引き継ぎ</h3><p>次の鳩係をメンバーに登録してから、権限を追加します。</p>${approved.map(m=>{const a=data.admins.find(x=>x.id===m.id);return `<div class="permissions"><strong>${e(m.name)}</strong><select aria-label="${e(m.name)}の権限" data-role="${e(m.id)}" ${a?.is_self?'disabled':''}><option value="none" ${!a?'selected':''}>部員</option><option value="editor" ${a?.role==='editor'?'selected':''}>鳩係</option><option value="owner" ${a?.role==='owner'?'selected':''}>責任者</option></select></div>`;}).join('')||'<p class="hint">まだ登録メンバーがいません。</p>'}<p class="hint">責任者は、他の人への管理権限の追加・解除とバックアップの取得ができます。</p></section><section class="panel padded" style="margin-top:20px"><h3>データのバックアップ</h3><p>LINEのユーザーIDを含みます。責任者だけで大切に保管してください。</p><a class="btn btn-small" href="${demo?'#':'/api/export'}" ${demo?'data-action="demo-export"':''}>${icon('download',15)}データを書き出す</a></section>`:''}<p class="hint"><a href="/privacy">プライバシーについて</a></p></aside></div>`;
+ const accounts=data.admins;
+ return `<div class="page-heading"><div><h2>配信・設定</h2></div><button class="btn" data-action="reload">最新の状態に更新</button></div><div class="section-grid"><div><section class="panel padded"><h3>LINEとの接続</h3><div class="settings-row"><div><strong>公式アカウント</strong><small>QMC 鳩当番リマインダー · ${e(data.officialId)}</small></div><span class="pill ${data.connection.messaging?'':'warn'}">${data.connection.messaging?'接続済み':'設定中'}</span></div><div class="settings-row"><div><strong>共有するグループ</strong><small>${e(data.group?.name||'まだ連携していません')}${data.group&&!data.group.active?' · Botが退出しています':''}</small></div><button class="btn btn-small" data-action="link-group">${data.group?.active?'連携を変更':'連携する'}</button></div><div class="settings-row"><div><strong>今日の配信</strong><small>共有済みの当番表をもとにしています。</small></div><span class="pill">${({not_shared:'まだ未共有',off:'お休み',accepted:'LINE受付済み',pending:'確認中',failed:'要確認',skipped:'要確認',needs_attention:'個別に連絡してください',scheduled:`${reminderTime}に配信予定`,waiting:'配信処理中'})[data.todayStatus]||'—'}</span></div><div class="settings-row"><div><strong>リマインドの時間</strong><small>日本時間 · 共有済みの当番表を使用</small></div><strong>毎日 ${reminderTime}</strong></div><div class="settings-row"><div><strong>自動配信の最終確認</strong><small>時刻を過ぎても更新されない場合は技術担当へご連絡ください。</small></div><span class="hint">${demo?'体験版では実行しません':data.cron?e(formatTime(data.cron.at)):'まだ実行されていません'}</span></div></section><p class="small-heading">${+month.slice(5)}月の配信結果</p><section class="panel table-wrap">${data.notifications.length?`<table class="status-table"><thead><tr><th>担当日</th><th>担当者</th><th>結果</th><th>受付時刻</th></tr></thead><tbody>${data.notifications.map(n=>`<tr><td>${+n.date.slice(-2)}日</td><td>${e(nameOf(n.member_id))}</td><td><span class="pill ${n.status==='accepted'?'':n.status==='pending'?'warn':'danger'}">${{accepted:'LINE受付済み',pending:'確認中',failed:'失敗',skipped:'要確認'}[n.status]}</span>${n.error?`<div class="hint">${e(n.error)}</div>`:''}</td><td>${e(formatTime(n.accepted_at))}</td></tr>`).join('')}</tbody></table>`:`<div class="empty-state">${icon('clock',30)}<h3>まだ配信履歴はありません</h3><p>当番表を共有すると、担当日の${reminderTime}から自動配信されます。</p></div>`}</section><p class="hint">「LINE受付済み」はLINEが送信要求を受け付けた状態です。到着や既読を確認する表示ではありません。</p></div><aside><section class="panel padded"><h3>今月のメッセージ通数</h3><p>${quota?`${quota.used} / ${quota.quota??'上限なし'} 通を使用中`:canEdit()?'共有前に残り通数を確認しましょう。':'メッセージ通数は、鳩係が確認できます。'}</p>${quota?`<p class="hint">${quota.groupSize?`${quota.groupSize}人のグループへの共有は、1回につき${quota.groupSize}通を使います。`:'グループ共有は、1回につき送信先の人数分の通数を使います。'}</p>`:''}<button class="btn btn-soft btn-small" data-action="quota">通数を確認</button></section>${data.user.role==='owner'?`<section class="panel padded" style="margin-top:20px"><h3>鳩係の引き継ぎ</h3><p>次の鳩係が一度ログインすると、ここに表示されます。グループ連携や友だち追加は不要です。</p>${accounts.map(m=>{const a=m.role?m:null;return `<div class="permissions"><strong>${e(m.name)}</strong><select aria-label="${e(m.name)}の権限" data-role="${e(m.login_id||m.id)}" data-login="${m.login_id?'true':'false'}" ${a?.is_self?'disabled':''}><option value="none" ${!a?'selected':''}>閲覧のみ</option><option value="editor" ${a?.role==='editor'?'selected':''}>鳩係</option><option value="owner" ${a?.role==='owner'?'selected':''}>責任者</option></select></div>`;}).join('')||'<p class="hint">ログインした人、または登録済みの部員が表示されます。</p>'}<p class="hint">責任者は、他の人への管理権限の追加・解除とバックアップの取得ができます。</p></section><section class="panel padded" style="margin-top:20px"><h3>データのバックアップ</h3><p>LINEのユーザーIDを含みます。責任者だけで大切に保管してください。</p><a class="btn btn-small" href="${demo?'#':'/api/export'}" ${demo?'data-action="demo-export"':''}>${icon('download',15)}データを書き出す</a></section>`:''}<p class="hint"><a href="/privacy">プライバシーについて</a></p></aside></div>`;
 }
 function render(){
  $('#app').innerHTML=shell(view==='calendar'?calendarPage():view==='members'?membersPage():settingsPage());
+ if(!canEdit()) document.querySelectorAll('[data-member],[data-action="link-group"],[data-action="quota"]').forEach(element=>element.remove());
  bindCommon();
 }
 function openModal(content,wide=false){const d=$('#modal');d.className=wide?'modal-wide':'';d.innerHTML=content;d.showModal();d.querySelector('[data-close]')?.addEventListener('click',()=>d.close());d.querySelectorAll('[data-cancel]').forEach(b=>b.addEventListener('click',()=>d.close()));}
@@ -346,9 +349,10 @@ function bindCommon(){
   }catch(err){toast(err.message);}
  }));
  document.querySelectorAll('[data-role]').forEach(select=>select.addEventListener('change',async()=>{
-  const m=data.members.find(x=>x.id===select.dataset.role),role=select.value;
-  openModal(modalHeader('管理権限を変更')+`<div class="modal-body"><p>${e(m.name)}さんを「${{none:'部員',editor:'鳩係',owner:'責任者'}[role]}」に変更します。</p><p class="hint">${role==='none'?'管理画面へのアクセスを解除します。':'当番表やメンバーを編集できます。'+(role==='owner'?'責任者は、他の人の権限変更とデータ書き出しもできます。':'')}</p></div><div class="modal-foot"><button class="btn" data-cancel>戻る</button><button class="btn btn-primary" id="apply-role">権限を変更する</button></div>`);
-  $('#apply-role').addEventListener('click',async()=>{try{if(demo)toast('体験版では権限は変更されません');else{await request('/api/admins','POST',{memberId:m.id,role});await load();toast('管理権限を変更しました');}$('#modal').close();}catch(err){modalError(err);}});
+  const isLogin=select.dataset.login==='true',m=data.admins.find(x=>(isLogin?x.login_id:x.id)===select.dataset.role),role=select.value;
+  openModal(modalHeader('管理権限を変更')+`<div class="modal-body"><p>${e(m.name)}さんを「${{none:'閲覧のみ',editor:'鳩係',owner:'責任者'}[role]}」に変更します。</p><p class="hint">${role==='none'?'閲覧はできますが、編集・送信はできなくなります。':'当番表やメンバーを編集できます。'+(role==='owner'?'責任者は、他の人の権限変更とデータ書き出しもできます。':'')}</p></div><div class="modal-foot"><button class="btn" data-cancel>戻る</button><button class="btn btn-primary" id="apply-role">権限を変更する</button></div>`);
+  $('#modal').addEventListener('close',()=>render(),{once:true});
+  $('#apply-role').addEventListener('click',async()=>{try{if(demo)toast('体験版では権限は変更されません');else{await request('/api/admins','POST',{...(isLogin?{loginId:m.login_id}:{memberId:m.id}),role});await load();toast('管理権限を変更しました');}$('#modal').close();}catch(err){modalError(err);}});
  }));
 }
 $('#modal').addEventListener('click',event=>{if(event.target===$('#modal'))$('#modal').close();});

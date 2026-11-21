@@ -162,6 +162,7 @@ svg { display: block; flex: none; }
 }
 .day:nth-child(7n) { border-right: 0; }
 .day:hover:not(.empty):not(:disabled) { background: #f0f0f0; }
+.day[aria-disabled="true"] { opacity: 1; cursor: default; }
 .day:focus-visible { z-index: 1; outline-offset: -3px; }
 .day.empty { background: radial-gradient(#00000020 .55px, transparent .75px) 0 0 / 4px 4px, #f5f5f5; }
 .day.today, .day.today:hover:not(:disabled) { background: #f5f5f5; box-shadow: inset 0 0 0 1px var(--print-ink), inset 3px 3px 0 var(--print-gray); }
@@ -197,7 +198,7 @@ svg { display: block; flex: none; }
 .settings-row { justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .settings-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .settings-row > div { min-width: 0; overflow-wrap: anywhere; }
-.settings-row > :last-child { flex-shrink: 0; max-width: 44%; text-align: right; }
+.settings-row > :last-child:not(:only-child) { flex-shrink: 0; max-width: 44%; text-align: right; }
 .permissions { justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .permissions strong { min-width: 0; overflow-wrap: anywhere; }
 .permissions select { width: 116px; flex: none; }
